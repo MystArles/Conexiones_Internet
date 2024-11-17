@@ -41,28 +41,53 @@ def crear_grafo(horario):
 
     return G
 
-def mejor_empresa_por_departamento(grafo, departamento):
-    empresas_departamento = [n for n, d in grafo.nodes(data=True) if d.get('departamento') == departamento]
-    if not empresas_departamento:
-        return None, None
-
-    mejor_empresa = None
-    menor_latencia = math.inf
-
-    for empresa in empresas_departamento:
-        latencia = sum(d['weight'] for _, _, d in grafo.edges(empresa, data=True))
-        if latencia < menor_latencia:
-            menor_latencia = latencia
-            mejor_empresa = empresa
-
-    return mejor_empresa, menor_latencia
-
-
 def grafo_a_json(G):
     nodos = [{"id": node, "tipo": G.nodes[node]['tipo']} for node in G.nodes()]
     aristas = [{"source": u, "target": v, "weight": d['weight']} for u, v, d in G.edges(data=True)]
     
     return json.dumps({"nodos": nodos, "aristas": aristas})
+
+
+def floyd_warshall(grafo):
+    nodos = list(grafo.nodes())
+    n = len(nodos)
+    
+    dist = {u: {v: float('inf') for v in nodos} for u in nodos}
+    
+
+    for u, v, data in grafo.edges(data=True):
+        dist[u][v] = data['weight']
+        dist[v][u] = data['weight']  
+    
+    for nodo in nodos:
+        dist[nodo][nodo] = 0
+    
+    for k in nodos:
+        for i in nodos:
+            for j in nodos:
+                if dist[i][j] > dist[i][k] + dist[k][j]:
+                    dist[i][j] = dist[i][k] + dist[k][j]
+    
+    return dist
+
+
+def mejor_empresa_por_departamento_floyd(grafo, departamento):
+    empresas_departamento = [n for n, d in grafo.nodes(data=True) if d.get('departamento') == departamento]
+    if not empresas_departamento:
+        return None, None
+
+    distancias = floyd_warshall(grafo)
+
+    mejor_empresa = None
+    menor_latencia = float('inf')
+
+    for empresa in empresas_departamento:
+        latencia_total = sum(distancias[empresa].values())
+        if latencia_total < menor_latencia:
+            menor_latencia = latencia_total
+            mejor_empresa = empresa
+
+    return mejor_empresa, menor_latencia
 
 
 def index(request):
@@ -74,7 +99,7 @@ def index(request):
     G = crear_grafo(horario)
 
     if departamento:
-        mejor_empresa, menor_latencia = mejor_empresa_por_departamento(G, departamento)
+        mejor_empresa, menor_latencia = mejor_empresa_por_departamento_floyd(G, departamento)
 
     grafo_json = grafo_a_json(G)
 
@@ -83,3 +108,4 @@ def index(request):
         'mejor_empresa': mejor_empresa,
         'menor_latencia': menor_latencia,
     })
+
