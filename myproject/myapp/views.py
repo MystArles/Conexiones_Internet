@@ -15,7 +15,6 @@ def extraer_latencia(velocidad_str):
         velocidad_maxima = int(match.group(2))
         unidad = match.group(3)
 
-        # Convertir a kbps
         if unidad == 'Mbps':
             velocidad_minima *= 1000
             velocidad_maxima *= 1000
@@ -26,8 +25,9 @@ def extraer_latencia(velocidad_str):
 
 def crear_grafo(horario):
     G = nx.Graph()
-    proveedores = Proveedor.objects.select_related('router')
-    
+    cantidad = 93985  
+    proveedores = Proveedor.objects.select_related('router')[:cantidad]  
+
     for proveedor in proveedores:
         latencia_base = 30 if horario == 'dia' else 70
         latencia = latencia_base / (1 + proveedor.conexiones)
@@ -38,8 +38,8 @@ def crear_grafo(horario):
             nombre_router = proveedor.router.nombre
             G.add_node(nombre_router, tipo='Router')
             G.add_edge(proveedor.empresa, nombre_router, weight=latencia)
-    return G
 
+    return G
 
 def mejor_empresa_por_departamento(grafo, departamento):
     empresas_departamento = [n for n, d in grafo.nodes(data=True) if d.get('departamento') == departamento]
@@ -72,10 +72,11 @@ def index(request):
     menor_latencia = None
 
     G = crear_grafo(horario)
-    grafo_json = grafo_a_json(G)
 
     if departamento:
         mejor_empresa, menor_latencia = mejor_empresa_por_departamento(G, departamento)
+
+    grafo_json = grafo_a_json(G)
 
     return render(request, 'grafo_app/index.html', {
         'grafo_json': grafo_json,
