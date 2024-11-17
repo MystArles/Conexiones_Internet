@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recomendación de Proveedores</title>
+    {% load static %}
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-image: url("{% static 'images/Fondo.jpg' %}");
+            background-size: cover;
+            background-position: center;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background-color: rgba(0, 123, 255, 0.8);
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.9); 
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        label {
+            font-weight: bold;
+        }
+        input, select {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        svg {
+            display: block;
+            margin: 20px auto;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Recomendación de Proveedores</h1>
+    </header>
+    <div class="container">
+        <form method="get">
+            <label for="departamento">Departamento:</label>
+            <input type="text" id="departamento" name="departamento" placeholder="Ingresa el departamento" required>
+
+            <label for="horario">Horario:</label>
+            <select id="horario" name="horario">
+                <option value="dia">Día</option>
+                <option value="noche">Noche</option>
+            </select>
+
+            <button type="submit">Buscar Proveedor</button>
+        </form>
+
+        {% if mejor_empresa %}
+        <div class="result">
+            <h2>Recomendación:</h2>
+            <p><strong>Empresa:</strong> {{ mejor_empresa }}</p>
+            <p><strong>Latencia Aproximada:</strong> {{ menor_latencia }} ms</p>
+        </div>
+        {% else %}
+        <div class="result">
+            <p>No se encontraron proveedores para el departamento especificado.</p>
+        </div>
+        {% endif %}
+
+        <svg width="1200" height="800"></svg>
+    </div>
+    <script>
+        const grafoData = JSON.parse('{{ grafo_json|safe }}');
+        
+        const svg = d3.select("svg")
+            .attr("width", 1200)
+            .attr("height", 800)
+
+        const g = svg.append("g");
+
+        // Configuración del zoom
+        const zoom = d3.zoom()
+            .scaleExtent([0.5, 10])
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+
+        svg.call(zoom);
+
+        const width = +svg.attr("width");
+        const height = +svg.attr("height");
+
+        // Creamos simulación de fuerzas
+        const simulation = d3.forceSimulation(grafoData.nodos)
+            .force("link", d3.forceLink(grafoData.aristas).id(d => d.id).distance(1200))
+            .force("charge", d3.forceManyBody().strength(-1000))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(160)); // Ajuste de colisión
+
+        // Dibujamos las aristas (enlaces)
+        const link = g.append("g")
+            .attr("class", "links")
+            .selectAll("line")
+            .data(grafoData.aristas)
+            .enter()
+            .append("line")
+            .attr("stroke-width", d => -60)
+            .attr("stroke", "#999")
+            .attr("opacity", 0.6);
+
+        // Dibujamos los nodos
+        const node = g.append("g")
+            .attr("class", "nodes")
+            .selectAll("circle")
+            .data(grafoData.nodos)
+            .enter()
+            .append("circle")
+            .attr("r", 10)
+            .attr("fill", d => d.tipo === 'Inicial' ? 'green' : (d.tipo === 'Proveedor' ? '#ffc107' : '#17a2b8'))
+            .call(d3.drag()
+                .on("start", dragStarted)
+                .on("drag", dragged)
+                .on("end", dragEnded));
+
+        // Etiquetas para nodos (nombres de empresas)
+        const labels = g.append("g")
+            .attr("class", "node-label")
+            .selectAll("text")
+            .data(grafoData.nodos)
+            .enter()
+            .append("text")
+            .attr("class", "node-label")
+            .attr("dx", 12)
+            .attr("dy", ".35em")
+            .text(d => d.id)
+            .style("visibility", "visible");
+
+        // Etiquetas para aristas (velocidades)
+        const edgeLabels = g.append("g")
+            .attr("class", "edge-labels")
+            .selectAll("text")
+            .data(grafoData.aristas)
+            .enter()
+            .append("text")
+            .attr("dx", 20)
+            .attr("dy", ".35em")
+            .text(d => d.weight + " ms")
+            .style("visibility", "visible"); // Siempre visibles
+        
+
+        // Actualizar posiciones de nodos y enlaces
+        function ticked() {
+            link.attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            node.attr("cx", d => d.x)
+                .attr("cy", d => d.y);
+
+            labels.attr("x", d => d.x)
+                .attr("y", d => d.y);
+
+            edgeLabels.attr("x", d => (d.source.x + d.target.x) / 2)
+                .attr("y", d => (d.source.y + d.target.y) / 2);
+        }
+
+        // Actualizamos posiciones en cada tick
+        simulation.on("tick", ticked);
+        simulation.alpha(1).restart();  // Reiniciar para calcular posiciones
+        setTimeout(() => simulation.stop(), 3000); // Detener después de 3 segundos
+
+        // Manejadores de eventos para mostrar información al hacer zoom
+        svg.on("dblclick.zoom", null); // Deshabilita el zoom con doble clic
+        svg.on("click", (event) => {
+            const scale = svg.property("__zoom").k;
+            if (scale > 2) {
+                labels.style("visibility", "visible");
+                edgeLabels.style("visibility", "visible");
+            } else {
+                labels.style("visibility", "hidden");
+                edgeLabels.style("visibility", "hidden");
+            }
+        });
+
+        // Funciones de arrastre
+        function dragStarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragEnded(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        ticked();
+    </script>
+</body>
+</html>
